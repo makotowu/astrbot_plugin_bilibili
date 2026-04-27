@@ -8,6 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from astrbot.api import logger
 from astrbot.api.all import *
 from astrbot.api.message_components import AtAll, File, Image, Plain
+from astrbot.core.agent.message import (
+    AssistantMessageSegment,
+    ImageURLPart,
+    TextPart,
+    UserMessageSegment,
+)
 
 from ..bili_client import BiliClient
 from ..core.constant import BANNER_PATH, LOGO_PATH
@@ -70,6 +76,8 @@ class DynamicListener:
         self.plain_push_forward_template = (
             cfg.get("plain_push_forward_template", "") or ""
         ).strip()
+        self.enable_ai_summary = bool(cfg.get("enable_ai_summary", False))
+        self.ai_summary_prompt = (cfg.get("ai_summary_prompt", "") or "").strip()
 
     async def start(self):
         """启动后台监听循环（按 UID 任务池调度）。"""
@@ -371,6 +379,7 @@ class DynamicListener:
         send_node: bool = False,
         category: NotificationCategory = "dynamic",
         dyn_id: Optional[str] = None,
+        summary_payload: Optional[Any] = None,
     ):
         notification = SubscriptionNotification(
             sub_user=sub_user,
@@ -379,7 +388,199 @@ class DynamicListener:
             category=category,
             dyn_id=dyn_id,
         )
-        await self.dispatcher.publish(notification)
+        dispatch_result = await self.dispatcher.publish(notification)
+        if category != "dynamic" or not dispatch_result.sent or summary_payload is None:
+            return
+        await self._send_ai_summary(sub_user, summary_payload, dyn_id)
+
+    def _build_analysis_lines(self, payload: Any, nested: bool = False) -> List[str]:
+        lines = list(
+            filter(
+                None,
+                [
+                    f"作者: {getattr(payload, 'name', '') or '未知'}",
+                    f"类型: {getattr(payload, 'type', '') or '未知'}",
+                    (
+                        f"标题: {getattr(payload, 'title', '')}"
+                        if getattr(payload, "title", "")
+                        else ""
+                    ),
+                    render_text_to_plain(getattr(payload, "text", "") or ""),
+                    (
+                        f"链接: {getattr(payload, 'url', '')}"
+                        if getattr(payload, "url", "") and not nested
+                        else ""
+                    ),
+                ],
+            )
+        )
+        forward_data = getattr(payload, "forward", None)
+        if forward_data:
+            lines.append("转发原文:")
+            lines.extend(self._build_analysis_lines(forward_data, nested=True))
+        return lines
+
+    def _build_ai_summary_prompt(self, payload: Any) -> str:
+        content = "\n".join(self._build_analysis_lines(payload))
+        if self.ai_summary_prompt:
+            return self.ai_summary_prompt.format(content=content)
+        return (
+            "请根据下面这条 Bilibili 动态生成简洁中文总结。\n"
+            "要求：\n"
+            "1. 先用 1 句话概括动态在说什么。\n"
+            "2. 再列 2 到 4 条要点。\n"
+            "3. 如果能明显看出作者语气或目的，用 1 句话补充。\n"
+            "4. 不要编造未提供的信息，不要使用 Markdown 标题。\n\n"
+            f"{content}"
+        )
+
+    async def _get_image_captions(
+        self, image_urls: list[str], sub_user: str
+    ) -> list[str] | None:
+        astrbot_cfg = self.context.get_config(umo=sub_user)
+        provider_settings = astrbot_cfg.get("provider_settings", {})
+        caption_provider_id = (
+            provider_settings.get("default_image_caption_provider_id", "")
+        ).strip()
+        if not caption_provider_id or not image_urls:
+            return None
+
+        caption_prompt = provider_settings.get(
+            "image_caption_prompt", "Please describe the image using Chinese."
+        )
+        provider_mgr = self.context.provider_manager
+
+        caption_provider = await provider_mgr.get_provider_by_id(caption_provider_id)
+        if not caption_provider:
+            logger.warning(f"图片转述模型 {caption_provider_id} 未找到，跳过转述。")
+            return None
+
+        captions = []
+        for img_url in image_urls:
+            try:
+                resp = await caption_provider.text_chat(
+                    prompt=caption_prompt,
+                    image_urls=[img_url],
+                )
+                cap = (getattr(resp, "completion_text", "") or "").strip()
+                if cap:
+                    captions.append(cap)
+                    logger.info(f"图片转述成功: {img_url[:60]} -> {cap[:80]}")
+            except Exception as e:
+                logger.warning(f"图片转述失败 {img_url[:60]}: {e}")
+                captions.append("")
+        return captions
+
+    async def _generate_ai_summary(self, sub_user: str, payload: Any) -> str:
+        if not self.enable_ai_summary:
+            return ""
+
+        try:
+            provider_id = await self.context.get_current_chat_provider_id(umo=sub_user)
+            if not provider_id:
+                logger.info(f"会话 {sub_user} 未配置聊天模型，已跳过动态摘要。")
+                return ""
+
+            image_urls = [
+                url.strip().replace("http://", "https://")
+                for url in getattr(payload, "image_urls", []) or []
+                if isinstance(url, str) and url.strip() and not url.startswith("data:")
+            ][:8]
+
+            prompt_text = self._build_ai_summary_prompt(payload)
+
+            captions = await self._get_image_captions(image_urls, sub_user)
+
+            if captions:
+                caption_lines = "\n".join(
+                    f"[图片 {i + 1}]: {c}" for i, c in enumerate(captions) if c
+                )
+                if caption_lines:
+                    prompt_text = (
+                        f"{prompt_text}\n\n该动态包含以下图片：\n{caption_lines}"
+                    )
+                logger.info(
+                    f"AI摘要: 使用图片转述, prompt_len={len(prompt_text)}, images={len(image_urls)}, captions={len(captions)}"
+                )
+                llm_resp = await self.context.llm_generate(
+                    chat_provider_id=provider_id,
+                    contexts=[UserMessageSegment(content=[TextPart(text=prompt_text)])],
+                )
+            else:
+                user_parts: list = [TextPart(text=prompt_text)]
+                for idx, img_url in enumerate(image_urls, start=1):
+                    user_parts.append(
+                        ImageURLPart(
+                            image_url=ImageURLPart.ImageURL(
+                                url=img_url, id=f"dynamic-{idx}"
+                            )
+                        )
+                    )
+                logger.info(
+                    f"AI摘要: 构造显式多模态消息, prompt_len={len(prompt_text)}, images={len(image_urls)}, urls={image_urls}"
+                )
+                llm_resp = await self.context.llm_generate(
+                    chat_provider_id=provider_id,
+                    contexts=[UserMessageSegment(content=user_parts)],
+                )
+
+            return (getattr(llm_resp, "completion_text", "") or "").strip()
+        except Exception as e:
+            logger.error(f"生成动态 AI 摘要失败: {e}\n{traceback.format_exc()}")
+            return ""
+
+    async def _persist_ai_summary(
+        self, sub_user: str, payload: Any, summary_text: str
+    ) -> None:
+        conv_mgr = self.context.conversation_manager
+
+        try:
+            cid = await conv_mgr.get_curr_conversation_id(sub_user)
+            if not cid:
+                return
+
+            user_parts: list = [TextPart(text=self._build_ai_summary_prompt(payload))]
+            for index, image_url in enumerate(
+                [
+                    url.strip().replace("http://", "https://")
+                    for url in getattr(payload, "image_urls", []) or []
+                    if isinstance(url, str)
+                    and url.strip()
+                    and not url.startswith("data:")
+                ][:8],
+                start=1,
+            ):
+                user_parts.append(
+                    ImageURLPart(
+                        image_url=ImageURLPart.ImageURL(
+                            url=image_url, id=f"dynamic-{index}"
+                        )
+                    )
+                )
+
+            await conv_mgr.add_message_pair(
+                cid=cid,
+                user_message=UserMessageSegment(content=user_parts),
+                assistant_message=AssistantMessageSegment(content=summary_text),
+            )
+        except Exception as e:
+            logger.error(f"写入动态摘要到会话历史失败: {e}\n{traceback.format_exc()}")
+
+    async def _send_ai_summary(
+        self, sub_user: str, payload: Any, dyn_id: Optional[str] = None
+    ) -> None:
+        summary_text = await self._generate_ai_summary(sub_user, payload)
+        if not summary_text:
+            return
+        await self._persist_ai_summary(sub_user, payload, summary_text)
+        summary_notification = SubscriptionNotification(
+            sub_user=sub_user,
+            chain_parts=[Plain(f"AI 总结:\n{summary_text}")],
+            send_node=False,
+            category="dynamic",
+            dyn_id=dyn_id,
+        )
+        await self.dispatcher.publish(summary_notification)
 
     def _cache_render(self, dyn_id: Optional[str], chain_parts: list, send_node: bool):
         """缓存渲染结果，避免同一动态在不同会话重复渲染。"""
@@ -408,6 +609,7 @@ class DynamicListener:
                 send_node=cached["send_node"],
                 category="dynamic",
                 dyn_id=dyn_id,
+                summary_payload=payload,
             )
             return
 
@@ -423,6 +625,7 @@ class DynamicListener:
                 send_node=send_node_flag,
                 category="dynamic",
                 dyn_id=dyn_id,
+                summary_payload=payload,
             )
             self._cache_render(dyn_id, ls, send_node_flag)
             logger.info(f"动态推送完成(纯文本): sub_user={sub_user} dyn_id={dyn_id}")
@@ -444,6 +647,7 @@ class DynamicListener:
                 send_node=send_node_flag,
                 category="dynamic",
                 dyn_id=dyn_id,
+                summary_payload=payload,
             )
             self._cache_render(dyn_id, ls, send_node_flag)
             logger.info(f"动态推送完成(图片): sub_user={sub_user} dyn_id={dyn_id}")
@@ -457,7 +661,12 @@ class DynamicListener:
         else:
             ls = self._compose_plain_push(payload, render_fail=True)
         await self._send_dynamic(
-            sub_user, ls, send_node=True, category="dynamic", dyn_id=dyn_id
+            sub_user,
+            ls,
+            send_node=True,
+            category="dynamic",
+            dyn_id=dyn_id,
+            summary_payload=payload,
         )
         logger.info(f"动态推送完成(降级纯文本): sub_user={sub_user} dyn_id={dyn_id}")
 
