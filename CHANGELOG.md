@@ -1,3 +1,9 @@
+## v1.6.0
+- 修复Telegram平台下图片尺寸引起的推送异常
+- 若由各种风控导致断连，现在重连后尝试处理缓解动态堆积
+- 新增一个函数工具，新增ai总结可选项，by [yyh-001](https://github.com/yyh-001)，see [PR#85](https://github.com/Soulter/astrbot_plugin_bilibili/pull/85)
+
+
 ## v1.5.8
 - 调整一处日志
 - 新增一个函数工具

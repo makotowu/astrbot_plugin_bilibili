@@ -83,7 +83,7 @@ plugin i https://github.com/Soulter/astrbot_plugin_bilibili
 
 ## 常见问题
 
-1. 渲染图片失败 (尝试次数: 1): 500, message='Internal Server Error'  
+1. 渲染图片失败  
 一般是公共接口不稳定性导致，详见[issue43](https://github.com/Soulter/astrbot_plugin_bilibili/issues/43)
 
 2. 错误代码-352 / 412  
