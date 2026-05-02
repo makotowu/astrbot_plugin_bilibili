@@ -603,14 +603,20 @@ class DynamicListener:
         cached = self.render_cache.get(dyn_id) if dyn_id else None
         if cached:
             logger.debug(f"动态推送命中缓存: dyn_id={dyn_id} sub_user={sub_user}")
-            await self._send_dynamic(
-                sub_user,
-                cached["chain"],
-                send_node=cached["send_node"],
-                category="dynamic",
-                dyn_id=dyn_id,
-                summary_payload=payload,
-            )
+            try:
+                await self._send_dynamic(
+                    sub_user,
+                    cached["chain"],
+                    send_node=cached["send_node"],
+                    category="dynamic",
+                    dyn_id=dyn_id,
+                    summary_payload=payload,
+                )
+            except Exception as e:
+                logger.error(
+                    f"发送缓存动态失败（已忽略）: sub_user={sub_user} "
+                    f"dyn_id={dyn_id} error={e}"
+                )
             return
 
         send_node_flag = self.node
@@ -619,38 +625,55 @@ class DynamicListener:
                 ls = self._compose_template_push(payload)
             else:
                 ls = self._compose_plain_push(payload)
-            await self._send_dynamic(
-                sub_user,
-                ls,
-                send_node=send_node_flag,
-                category="dynamic",
-                dyn_id=dyn_id,
-                summary_payload=payload,
-            )
-            self._cache_render(dyn_id, ls, send_node_flag)
-            logger.info(f"动态推送完成(纯文本): sub_user={sub_user} dyn_id={dyn_id}")
+            try:
+                await self._send_dynamic(
+                    sub_user,
+                    ls,
+                    send_node=send_node_flag,
+                    category="dynamic",
+                    dyn_id=dyn_id,
+                    summary_payload=payload,
+                )
+                logger.info(
+                    f"动态推送完成(纯文本): sub_user={sub_user} dyn_id={dyn_id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"动态推送失败（已缓存并忽略）: sub_user={sub_user} "
+                    f"dyn_id={dyn_id} error={e}"
+                )
+            finally:
+                self._cache_render(dyn_id, ls, send_node_flag)
             return
 
         img_path = await self.renderer.render_dynamic(payload)
         if img_path:
+            platform_name = self._resolve_platform_name(sub_user)
             url = payload.url
-            if is_height_valid(img_path):
+            if is_height_valid(img_path, platform_name):
                 ls = [Image.fromFileSystem(img_path)]
             else:
                 timestamp = int(time.time())
                 filename = f"bilibili_dynamic_{timestamp}.jpg"
                 ls = [File(file=img_path, name=filename)]
             ls.append(Plain(f"\n{url}"))
-            await self._send_dynamic(
-                sub_user,
-                ls,
-                send_node=send_node_flag,
-                category="dynamic",
-                dyn_id=dyn_id,
-                summary_payload=payload,
-            )
-            self._cache_render(dyn_id, ls, send_node_flag)
-            logger.info(f"动态推送完成(图片): sub_user={sub_user} dyn_id={dyn_id}")
+            try:
+                await self._send_dynamic(
+                    sub_user,
+                    ls,
+                    send_node=send_node_flag,
+                    category="dynamic",
+                    dyn_id=dyn_id,
+                    summary_payload=payload,
+                )
+                logger.info(f"动态推送完成(图片): sub_user={sub_user} dyn_id={dyn_id}")
+            except Exception as e:
+                logger.error(
+                    f"动态推送失败（已缓存并忽略）: sub_user={sub_user} "
+                    f"dyn_id={dyn_id} error={e}"
+                )
+            finally:
+                self._cache_render(dyn_id, ls, send_node_flag)
             return
 
         logger.warning(
@@ -660,15 +683,32 @@ class DynamicListener:
             ls = self._compose_template_push(payload, render_fail=True)
         else:
             ls = self._compose_plain_push(payload, render_fail=True)
-        await self._send_dynamic(
-            sub_user,
-            ls,
-            send_node=True,
-            category="dynamic",
-            dyn_id=dyn_id,
-            summary_payload=payload,
-        )
-        logger.info(f"动态推送完成(降级纯文本): sub_user={sub_user} dyn_id={dyn_id}")
+        try:
+            await self._send_dynamic(
+                sub_user,
+                ls,
+                send_node=True,
+                category="dynamic",
+                dyn_id=dyn_id,
+                summary_payload=payload,
+            )
+            logger.info(
+                f"动态推送完成(降级纯文本): sub_user={sub_user} dyn_id={dyn_id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"动态推送失败（已忽略）: sub_user={sub_user} dyn_id={dyn_id} error={e}"
+            )
+
+    def _resolve_platform_name(self, sub_user: str) -> str:
+        """解析 sub_user 所属平台的类型名（如 telegram、aiocqhttp）。"""
+        adapter_id = sub_user.split(":", 1)[0] if ":" in sub_user else ""
+        if not adapter_id:
+            return ""
+        platform_inst = self.context.get_platform_inst(adapter_id)
+        if platform_inst:
+            return platform_inst.meta().name
+        return ""
 
     @staticmethod
     def _extract_group_session(sub_user: str) -> Optional[Tuple[str, str]]:
@@ -763,7 +803,19 @@ class DynamicListener:
             return
         img_path = await self.renderer.render_dynamic(payload)
         if img_path:
-            image_chain = [Image.fromFileSystem(img_path), Plain(f"\n{payload.url}")]
+            platform_name = self._resolve_platform_name(sub_user)
+            if is_height_valid(img_path, platform_name):
+                image_chain = [
+                    Image.fromFileSystem(img_path),
+                    Plain(f"\n{payload.url}"),
+                ]
+            else:
+                timestamp = int(time.time())
+                filename = f"bilibili_live_{timestamp}.jpg"
+                image_chain = [
+                    File(file=img_path, name=filename),
+                    Plain(f"\n{payload.url}"),
+                ]
             if with_atall:
                 image_chain = self._prepend_atall(image_chain)
             await self._send_dynamic(sub_user, image_chain, category="live")

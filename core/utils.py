@@ -1,6 +1,7 @@
 import base64
 import html
 import io
+import os
 import re
 from urllib.parse import urlparse
 
@@ -104,18 +105,31 @@ def parse_rich_text(summary, topic):
     return text
 
 
-def is_height_valid(img_path: str, max_height: int = 25000) -> bool:
+def is_height_valid(
+    img_path: str, platform_id: str = "", max_height: int = 25000
+) -> bool:
     """
-    检查图片高度是否在允许范围内
-    :param img_path: 图片文件路径
-    :param max_height: 最大允许高度
-    :return: 如果图片高度小于等于max_height则返回True，否则返回False
+    检查图片是否可以作为 Image 发送（而非 File）。
+    不同平台对图片尺寸有不同限制。
     """
-
     try:
+        file_size = os.path.getsize(img_path)
+        if file_size > 10 * 1024 * 1024:
+            return False
+
         with PILImage.open(img_path) as img:
-            _, height = img.size
+            width, height = img.size
+
+            if platform_id == "telegram":
+                if (width + height) > 10000:
+                    return False
+                longer = max(width, height)
+                shorter = min(width, height)
+                if shorter > 0 and (longer / shorter) > 20:
+                    return False
+                return True
+
             return height <= max_height
     except Exception as e:
-        logger.error(f"无法打开图片 {img_path} 进行高度检查: {e}")
+        logger.error(f"无法打开图片 {img_path} 进行尺寸检查: {e}")
         return False

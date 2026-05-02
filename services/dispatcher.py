@@ -45,7 +45,15 @@ class SubscriptionNotificationDispatcher:
             return DispatchResult(sent=False, dropped=True, reason="silent_mode")
 
         result = self._build_event_result(notification)
-        await self.context.send_message(notification.sub_user, result)
+        try:
+            await self.context.send_message(notification.sub_user, result)
+        except Exception as e:
+            logger.error(
+                f"发送订阅通知失败: sub_user={notification.sub_user} "
+                f"category={notification.category} dyn_id={notification.dyn_id} "
+                f"error={e}"
+            )
+            return DispatchResult(sent=False, reason=str(e))
         await self._on_sent(notification)
         return DispatchResult(sent=True)
 
