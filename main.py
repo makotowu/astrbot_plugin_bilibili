@@ -224,6 +224,7 @@ class Main(Star):
     async def _send_subscription_result(
         self, event: AstrMessageEvent, payload: RenderPayload, avatar: str
     ) -> MessageEventResult | None:
+        text = "\n".join(filter(None, payload.text.split("<br>")))
         if self.rai:
             img_path = await self.renderer.render_dynamic(payload)
             if img_path:
@@ -232,13 +233,12 @@ class Main(Star):
                 )
                 return None
             msg = "渲染图片失败了 (´;ω;`)"
-            text = "\n".join(filter(None, payload.text.split("<br>")))
             chain = MessageChain().message(msg).message(text)
             if avatar:
                 chain = chain.url_image(avatar)
             await event.send(chain)
             return None
-        chain = [Plain(payload.text)]
+        chain = [Plain(text)]
         if avatar:
             chain.append(Image.fromURL(avatar))
         return MessageEventResult(chain=chain, use_t2i_=False)
