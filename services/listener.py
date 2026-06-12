@@ -78,6 +78,7 @@ class DynamicListener:
         ).strip()
         self.enable_ai_summary = bool(cfg.get("enable_ai_summary", False))
         self.ai_summary_prompt = (cfg.get("ai_summary_prompt", "") or "").strip()
+        self.ai_summary_cache: OrderedDict[str, str] = OrderedDict()
 
     async def start(self):
         """启动后台监听循环（按 UID 任务池调度）。"""
@@ -471,9 +472,14 @@ class DynamicListener:
                 captions.append("")
         return captions
 
-    async def _generate_ai_summary(self, sub_user: str, payload: Any) -> str:
+    async def _generate_ai_summary(self, sub_user: str, payload: Any, dyn_id: Optional[str] = None) -> str:
         if not self.enable_ai_summary:
             return ""
+
+        # 检查缓存
+        if dyn_id and dyn_id in self.ai_summary_cache:
+            logger.debug(f"AI总结命中缓存: dyn_id={dyn_id}")
+            return self.ai_summary_cache[dyn_id]
 
         try:
             provider_id = await self.context.get_current_chat_provider_id(umo=sub_user)
@@ -524,7 +530,16 @@ class DynamicListener:
                     contexts=[UserMessageSegment(content=user_parts)],
                 )
 
-            return (getattr(llm_resp, "completion_text", "") or "").strip()
+            summary_text = (getattr(llm_resp, "completion_text", "") or "").strip()
+
+            # 缓存 AI 总结结果
+            if dyn_id and summary_text:
+                self.ai_summary_cache[dyn_id] = summary_text
+                # 限制缓存大小，使用与 render_cache 相同的大小限制
+                while len(self.ai_summary_cache) > self.render_cache_limit:
+                    self.ai_summary_cache.popitem(last=False)
+
+            return summary_text
         except Exception as e:
             logger.error(f"生成动态 AI 摘要失败: {e}\n{traceback.format_exc()}")
             return ""
@@ -569,7 +584,7 @@ class DynamicListener:
     async def _send_ai_summary(
         self, sub_user: str, payload: Any, dyn_id: Optional[str] = None
     ) -> None:
-        summary_text = await self._generate_ai_summary(sub_user, payload)
+        summary_text = await self._generate_ai_summary(sub_user, payload, dyn_id)
         if not summary_text:
             return
         await self._persist_ai_summary(sub_user, payload, summary_text)
@@ -687,7 +702,7 @@ class DynamicListener:
             await self._send_dynamic(
                 sub_user,
                 ls,
-                send_node=True,
+                send_node=send_node_flag,
                 category="dynamic",
                 dyn_id=dyn_id,
                 summary_payload=payload,

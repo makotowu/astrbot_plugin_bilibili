@@ -91,8 +91,9 @@ class Renderer:
                     render_output
                     and os.path.exists(render_output)
                     and os.path.getsize(render_output) > 4096
+                    and self._validate_image(render_output)
                 ):
-                    return render_output  # 成功，直接返回渲染结果
+                    return render_output
             except Exception as e:
                 logger.error(f"渲染图片失败 (尝试次数: {attempt}): {e}")
 
@@ -100,6 +101,18 @@ class Renderer:
                 await asyncio.sleep(RETRY_DELAY)
 
         return None  # 所有尝试都失败
+
+    @staticmethod
+    def _validate_image(img_path: str) -> bool:
+        """验证图片文件是否有效可读"""
+        try:
+            from PIL import Image
+            with Image.open(img_path) as img:
+                img.verify()
+            return True
+        except Exception as e:
+            logger.warning(f"图片验证失败 {img_path}: {e}")
+            return False
 
     @staticmethod
     def _build_base_payload(item: Dict[str, Any]) -> RenderPayload:
