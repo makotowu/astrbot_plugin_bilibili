@@ -287,7 +287,7 @@ class DynamicListener:
             filter(
                 None,
                 [
-                    self._build_plain_header(payload, nested),
+                    self._build_plain_header(payload, nested) if self.rai else None,
                     (f"标题: {payload.title}" if payload.title else ""),
                     self._build_plain_body(payload),
                 ],
