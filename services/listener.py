@@ -288,7 +288,7 @@ class DynamicListener:
             filter(
                 None,
                 [
-                    None if (self.rai and category == "live") else self._build_plain_header(payload, nested),
+                    None if (category == "live" and not self.rai) else self._build_plain_header(payload, nested),
                     (f"标题: {payload.title}" if payload.title else ""),
                     self._build_plain_body(payload),
                 ],
