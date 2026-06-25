@@ -47,7 +47,7 @@ plugin i https://github.com/Soulter/astrbot_plugin_bilibili
 | **bili_sub** | `<B站UID> [过滤器...]` | 订阅指定 UP 主的动态。可以添加多个过滤器（以空格分隔）以排除不感兴趣的内容。 | `订阅动态` |
 | **bili_sub_list** | (无) | 显示当前会话的所有订阅。 | `订阅列表` |
 | **bili_sub_del** | `<B站UID>` | 删除当前会话中对指定 UP 主的订阅。 | `订阅删除` |
-| **bili_global_del** | `<SID>` | **[管理员]** 删除指定会话的所有订阅。使用 `/sid` 指令可查看会话 UMO。 | `全局删除` |
+| **bili_global_del** | `<SID>` | **[管理员]** 删除指定会话的所有订阅。使用 `/sid` 指令可查看会话 UMO。建议以「」包裹SID，形如`/bili_global_del 「QQ 12345:FriendMessage:67890」` | `全局删除` |
 | **bili_global_list** | (无) | **[管理员]** 查看所有会话的订阅情况。 | `全局列表` |
 | **bili_global_sub** | `<SID> <B站UID> [过滤器...]` | **[管理员]** 为指定会话（UMO）添加对 UP 主的订阅。建议以「」包裹SID，形如`/bili_global_sub 「QQ 12345:FriendMessage:67890」 123456` | `全局订阅` |
 | **bili_sub_test** | `<B站UID>` | 测试订阅功能。仅测试获取动态与渲染图片功能，不保存订阅信息。 | `订阅测试` |
