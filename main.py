@@ -594,16 +594,47 @@ class Main(Star):
 
     @permission_type(PermissionType.ADMIN)
     @command("bili_global_sub", alias={"全局订阅"})
-    async def global_sub_add(
-        self, event: AstrMessageEvent, umo: str, uid: str, input: GreedyStr
-    ):
-        """管理员指令。通过 UID 添加某一个用户的所有订阅。"""
-        if not is_valid_umo(umo) or not uid.isdigit():
+    async def global_sub_add(self, event: AstrMessageEvent, raw_args: GreedyStr = ""):
+        """管理员指令。通过 UMO 和 UID 添加某一个用户的所有订阅。
+        用法: /bili_global_sub <UMO> <UID> [过滤参数]
+        UMO 格式: <平台名>:<消息类型>:<会话ID>（平台名可能包含空格）
+        """
+        raw = raw_args.strip()
+        if not raw:
+            return MessageEventResult().message(
+                "请提供正确的UMO与UID。使用 /sid 指令查看当前会话的 UMO 或参考 WebUI-自定义规则。"
+            )
+
+        umo = None
+        uid = None
+        input_str = ""
+
+        if raw.startswith("「"):
+            # 主要模式：UMO 被「」包裹，支持平台名含空格的情况
+            end_idx = raw.find("」")
+            if end_idx == -1:
+                return MessageEventResult().message(
+                    "UMO 格式错误：请使用「」包裹 UMO，例如: 「QQ 12345:GroupMessage:67890」"
+                )
+            umo = raw[1:end_idx]
+            rest = raw[end_idx + 1 :].strip().split()
+            if rest:
+                uid = rest[0]
+                input_str = " ".join(rest[1:])
+        else:
+            # 兜底模式：无括号的简单 UMO 格式（兼容旧用法）
+            parts = raw.split()
+            if len(parts) >= 2:
+                umo = parts[0]
+                uid = parts[1]
+                input_str = " ".join(parts[2:])
+
+        if not umo or not uid or not is_valid_umo(umo) or not uid.isdigit():
             return MessageEventResult().message(
                 "请提供正确的UMO与UID。使用 /sid 指令查看当前会话的 UMO 或参考 WebUI-自定义规则。"
             )
         filter_types, filter_regex, live_atall, at_all, at_sub, unat_sub = (
-            self._parse_sub_args(input)
+            self._parse_sub_args(input_str)
         )
         uid_int = int(uid)
 
@@ -635,7 +666,7 @@ class Main(Star):
                 update_msg += warning
             return MessageEventResult().message(update_msg)
         return MessageEventResult().message(
-            f"订阅完成，已为{umo}添加订阅{uid_int}，详情见日志。{warning}"
+            f"订阅完成，已为「{umo}」添加订阅{uid_int}，详情见日志。{warning}"
         )
 
     @permission_type(PermissionType.ADMIN)
