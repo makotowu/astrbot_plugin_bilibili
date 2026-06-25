@@ -275,6 +275,7 @@ class DynamicListener:
     def _compose_plain_push(
         self,
         payload: Any,
+        category: NotificationCategory = "dynamic",
         render_fail: bool = False,
         nested: bool = False,
     ) -> list:
@@ -287,7 +288,7 @@ class DynamicListener:
             filter(
                 None,
                 [
-                    self._build_plain_header(payload, nested),
+                    None if (category == "live" and not self.rai) else self._build_plain_header(payload, nested),
                     (f"标题: {payload.title}" if payload.title else ""),
                     self._build_plain_body(payload),
                 ],
@@ -319,7 +320,7 @@ class DynamicListener:
 
         text = self._format_payload_template(self.plain_push_template, payload)
         if text is None:
-            return self._compose_plain_push(payload, render_fail)
+            return self._compose_plain_push(payload, render_fail=render_fail)
         if text:
             chain.append(Plain(text))
 
@@ -811,7 +812,7 @@ class DynamicListener:
         self, sub_user: str, payload: RenderPayload, with_atall: bool
     ) -> None:
         if not self.rai:
-            ls = self._compose_plain_push(payload)
+            ls = self._compose_plain_push(payload, category="live")
             if with_atall:
                 ls = self._prepend_atall(ls)
             await self._send_dynamic(sub_user, ls, category="live")
