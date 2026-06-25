@@ -582,11 +582,34 @@ class Main(Star):
 
     @permission_type(PermissionType.ADMIN)
     @command("bili_global_del", alias={"全局删除"})
-    async def global_sub_del(self, event: AstrMessageEvent, umo: str = ""):
-        """管理员指令。通过 UMO 删除某一个群聊或者私聊的所有订阅。"""
-        if not is_valid_umo(umo):
+    async def global_sub_del(self, event: AstrMessageEvent, raw_args: GreedyStr):
+        """管理员指令。通过 UMO 删除某一个群聊或者私聊的所有订阅。
+        用法: /bili_global_del <UMO>
+        UMO 格式: <平台名>:<消息类型>:<会话ID>（平台名可能包含空格，需用「」包裹）
+        """
+        raw = raw_args.strip()
+        if not raw:
             return MessageEventResult().message(
-                "通过 UMO 删除某一个群聊或者私聊的所有订阅。使用 /sid 指令查看当前会话的 UMO 或参考 WebUI-自定义规则。"
+                "请提供正确的UMO。使用 /sid 指令查看当前会话的 UMO 或参考 WebUI-自定义规则。"
+            )
+
+        umo = None
+
+        if raw.startswith("「"):
+            end_idx = raw.find("」")
+            if end_idx == -1:
+                return MessageEventResult().message(
+                    "UMO 格式错误：请使用「」包裹 UMO，例如: 「QQ 12345:GroupMessage:67890」"
+                )
+            umo = raw[1:end_idx]
+        else:
+            parts = raw.split()
+            if parts:
+                umo = parts[0]
+
+        if not umo or not is_valid_umo(umo):
+            return MessageEventResult().message(
+                "请提供正确的UMO。使用 /sid 指令查看当前会话的 UMO 或参考 WebUI-自定义规则。"
             )
 
         msg = await self.data_manager.remove_all_for_user(umo)
