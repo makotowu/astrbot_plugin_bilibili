@@ -594,7 +594,7 @@ class Main(Star):
 
     @permission_type(PermissionType.ADMIN)
     @command("bili_global_sub", alias={"全局订阅"})
-    async def global_sub_add(self, event: AstrMessageEvent, raw_args: GreedyStr = ""):
+    async def global_sub_add(self, event: AstrMessageEvent, raw_args: GreedyStr):
         """管理员指令。通过 UMO 和 UID 添加某一个用户的所有订阅。
         用法: /bili_global_sub <UMO> <UID> [过滤参数]
         UMO 格式: <平台名>:<消息类型>:<会话ID>（平台名可能包含空格）

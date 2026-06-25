@@ -1,3 +1,8 @@
+## v1.6.3
+- 修复文字模式下up主信息指代不清，pr by[dizzykitty3](https://github.com/dizzykitty3)
+- 支持动态推送时 @全体成员 及 @特定订阅者，pr by [WinBSOD](https://github.com/WinBSOD)
+- 调整指令中UMO参数的建议写法，兼容机器人名中含有空格的情况，见README.md中"全局订阅"指令的示例
+
 ## v1.6.2
 - ai总结避免重复
 - 验证图片可用性
