@@ -107,6 +107,7 @@ class Renderer:
         """验证图片文件是否有效可读"""
         try:
             from PIL import Image
+
             with Image.open(img_path) as img:
                 img.verify()
             return True

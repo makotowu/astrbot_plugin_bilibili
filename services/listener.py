@@ -288,7 +288,9 @@ class DynamicListener:
             filter(
                 None,
                 [
-                    None if (category == "live" and not self.rai) else self._build_plain_header(payload, nested),
+                    None
+                    if (category == "live" and not self.rai)
+                    else self._build_plain_header(payload, nested),
                     (f"标题: {payload.title}" if payload.title else ""),
                     self._build_plain_body(payload),
                 ],
@@ -473,7 +475,9 @@ class DynamicListener:
                 captions.append("")
         return captions
 
-    async def _generate_ai_summary(self, sub_user: str, payload: Any, dyn_id: Optional[str] = None) -> str:
+    async def _generate_ai_summary(
+        self, sub_user: str, payload: Any, dyn_id: Optional[str] = None
+    ) -> str:
         if not self.enable_ai_summary:
             return ""
 
@@ -624,7 +628,9 @@ class DynamicListener:
         cached = self.render_cache.get(dyn_id) if dyn_id else None
         if cached:
             logger.debug(f"动态推送命中缓存: dyn_id={dyn_id} sub_user={sub_user}")
-            chain_to_send = self._add_at_components(list(cached["chain"]), sub_data, permit_atall=permit_atall)
+            chain_to_send = self._add_at_components(
+                list(cached["chain"]), sub_data, permit_atall=permit_atall
+            )
             try:
                 await self._send_dynamic(
                     sub_user,
@@ -648,7 +654,9 @@ class DynamicListener:
             else:
                 ls = self._compose_plain_push(payload)
             self._cache_render(dyn_id, ls, send_node_flag)
-            chain_to_send = self._add_at_components(list(ls), sub_data, permit_atall=permit_atall)
+            chain_to_send = self._add_at_components(
+                list(ls), sub_data, permit_atall=permit_atall
+            )
             try:
                 await self._send_dynamic(
                     sub_user,
@@ -682,7 +690,9 @@ class DynamicListener:
                 ls = [File(file=img_path, name=filename)]
             ls.append(Plain(f"\n{url}"))
             self._cache_render(dyn_id, ls, send_node_flag)
-            chain_to_send = self._add_at_components(list(ls), sub_data, permit_atall=permit_atall)
+            chain_to_send = self._add_at_components(
+                list(ls), sub_data, permit_atall=permit_atall
+            )
             try:
                 await self._send_dynamic(
                     sub_user,
@@ -707,7 +717,9 @@ class DynamicListener:
             ls = self._compose_template_push(payload, render_fail=True)
         else:
             ls = self._compose_plain_push(payload, render_fail=True)
-        chain_to_send = self._add_at_components(list(ls), sub_data, permit_atall=permit_atall)
+        chain_to_send = self._add_at_components(
+            list(ls), sub_data, permit_atall=permit_atall
+        )
         try:
             await self._send_dynamic(
                 sub_user,
@@ -771,7 +783,9 @@ class DynamicListener:
         if not sub_data:
             return chain_parts
         at_components = []
-        should_at_all = (sub_data.at_all or (is_live and sub_data.live_atall)) and permit_atall
+        should_at_all = (
+            sub_data.at_all or (is_live and sub_data.live_atall)
+        ) and permit_atall
         if should_at_all:
             at_components.extend([AtAll(), Plain(" ")])
         elif sub_data.at_sub_users:
@@ -836,12 +850,19 @@ class DynamicListener:
         )
 
     async def _send_live_payload(
-        self, sub_user: str, payload: RenderPayload, sub_data: SubscriptionRecord, permit_atall: bool, is_offline: bool = False
+        self,
+        sub_user: str,
+        payload: RenderPayload,
+        sub_data: SubscriptionRecord,
+        permit_atall: bool,
+        is_offline: bool = False,
     ) -> None:
         if not self.rai:
             ls = self._compose_plain_push(payload, category="live")
             if not is_offline:
-                ls = self._add_at_components(list(ls), sub_data, is_live=True, permit_atall=permit_atall)
+                ls = self._add_at_components(
+                    list(ls), sub_data, is_live=True, permit_atall=permit_atall
+                )
             await self._send_dynamic(sub_user, ls, category="live")
             return
         img_path = await self.renderer.render_dynamic(payload)
@@ -860,12 +881,16 @@ class DynamicListener:
                     Plain(f"\n{payload.url}"),
                 ]
             if not is_offline:
-                image_chain = self._add_at_components(image_chain, sub_data, is_live=True, permit_atall=permit_atall)
+                image_chain = self._add_at_components(
+                    image_chain, sub_data, is_live=True, permit_atall=permit_atall
+                )
             await self._send_dynamic(sub_user, image_chain, category="live")
             return
         ls = self._compose_plain_push(payload, render_fail=True)
         if not is_offline:
-            ls = self._add_at_components(list(ls), sub_data, is_live=True, permit_atall=permit_atall)
+            ls = self._add_at_components(
+                list(ls), sub_data, is_live=True, permit_atall=permit_atall
+            )
         await self._send_dynamic(sub_user, ls, category="live")
 
     async def _check_atall_permission(self, sub_user: str, enabled: bool) -> bool:
@@ -979,7 +1004,9 @@ class DynamicListener:
                 sub_user,
                 bool(sub_data.live_atall or sub_data.at_all) and is_live_started,
             )
-            await self._send_live_payload(sub_user, payload, sub_data, with_atall, is_offline=is_live_ended)
+            await self._send_live_payload(
+                sub_user, payload, sub_data, with_atall, is_offline=is_live_ended
+            )
 
     def _get_dynamic_items(self, dyn: Dict[str, Any], data: SubscriptionRecord):
         """获取动态条目列表。"""

@@ -249,7 +249,7 @@ class SubscriptionRecord:
         self.live_atall = bool(live_atall)
         if at_all is not None:
             self.at_all = bool(at_all)
-            
+
         current_users = set(self.at_sub_users)
         if add_sub_users:
             for u in add_sub_users:
