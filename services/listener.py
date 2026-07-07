@@ -6,8 +6,8 @@ from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from astrbot.api import logger
-from astrbot.api.all import *
-from astrbot.api.message_components import AtAll, File, Image, Plain
+from astrbot.api.message_components import At, AtAll, File, Image, Plain
+from astrbot.core.star import Context
 from astrbot.core.agent.message import (
     AssistantMessageSegment,
     ImageURLPart,
@@ -284,18 +284,22 @@ class DynamicListener:
         if render_fail and not nested:
             chain.append(Plain("渲染图片失败了 (´;ω;`)\n"))
 
-        lines = list(
-            filter(
-                None,
-                [
-                    None
-                    if (category == "live" and not self.rai)
-                    else self._build_plain_header(payload, nested),
-                    (f"标题: {payload.title}" if payload.title else ""),
-                    self._build_plain_body(payload),
-                ],
-            )
-        )
+        header_item = self._build_plain_header(payload, nested)
+        title_item = f"标题: {payload.title}" if payload.title else ""
+        body_raw = self._build_plain_body(payload)
+
+        is_live_plain = category == "live" and not self.rai
+        if is_live_plain:
+            # 开播/下播通知不使用默认 header，用 body 第一行作为标题行，
+            # 直播间标题放在 body 中间，时长行（如果有）放在最后
+            header_item = None
+            body_lines = body_raw.split("\n")
+            notify_line = body_lines[0]  # "📣 ...开播了/下播了！"
+            tail_lines = body_lines[1:]  # ["本场直播时长：..."]
+            ordering = [notify_line, title_item, *tail_lines]
+            lines = list(filter(None, ordering))
+        else:
+            lines = list(filter(None, [header_item, title_item, body_raw]))
         if lines:
             chain.append(Plain("\n".join(lines)))
 
@@ -427,7 +431,7 @@ class DynamicListener:
     def _build_ai_summary_prompt(self, payload: Any) -> str:
         content = "\n".join(self._build_analysis_lines(payload))
         if self.ai_summary_prompt:
-            return self.ai_summary_prompt.format(content=content)
+            return self.ai_summary_prompt.replace("{content}", content)
         return (
             "请根据下面这条 Bilibili 动态生成简洁中文总结。\n"
             "要求：\n"
@@ -886,7 +890,7 @@ class DynamicListener:
                 )
             await self._send_dynamic(sub_user, image_chain, category="live")
             return
-        ls = self._compose_plain_push(payload, render_fail=True)
+        ls = self._compose_plain_push(payload, render_fail=True, category="live")
         if not is_offline:
             ls = self._add_at_components(
                 list(ls), sub_data, is_live=True, permit_atall=permit_atall
